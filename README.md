@@ -4,7 +4,7 @@ Reusable Terraform module for enabling observability in AWS EKS clusters. Provis
 <!-- BEGIN_TF_DOCS -->
 ## Contents
 - [Description](#description)
-- [Dependencies](#dependencies)
+- [Usage](#usage)
 - [Resources](#resources)
 - [Modules](#modules)
 - [Inputs](#inputs)
@@ -48,6 +48,104 @@ grafana_values_override = {
       "alb.ingress.kubernetes.io/target-type" = "ip"
     }
     hosts = ["grafana.example.com"]
+  }
+}
+```
+
+
+## Usage
+
+### Minimal — no ingress
+
+Deploys Prometheus, Grafana (ClusterIP, no external access), and Fluent Bit with CloudWatch log shipping.
+
+```terraform
+module "eks_observability" {
+  source = "./modules/eks-observability"
+
+  cluster_name = "my-cluster"
+
+  fluent_bit_config_files = {
+    "fluent-bit.conf"      = file("${path.module}/conf_files/fluent-bit.conf")
+    "application-log.conf" = file("${path.module}/conf_files/application-log.conf")
+    "dataplane-log.conf"   = file("${path.module}/conf_files/dataplane-log.conf")
+    "host-log.conf"        = file("${path.module}/conf_files/host-log.conf")
+    "parsers.conf"         = file("${path.module}/conf_files/parsers.conf")
+  }
+
+  tags = {
+    Environment = "dev"
+  }
+}
+```
+
+### With Gateway API HTTPRoute
+
+Exposes Grafana via Gateway API `HTTPRoute`.
+
+```terraform
+module "eks_observability" {
+  source = "./modules/eks-observability"
+
+  cluster_name = "my-cluster"
+
+  # Grafana ingress via Gateway API
+  create_grafana_httproute     = true
+  grafana_hostname             = "grafana.example.com"
+  grafana_gateway_name         = "my-gateway"
+  grafana_gateway_namespace    = "ingress-gateway"
+  grafana_gateway_section_name = "https"
+
+  # Fluetbit config files
+  fluent_bit_config_files = {
+    "fluent-bit.conf"      = file("${path.module}/conf_files/fluent-bit.conf")
+    "application-log.conf" = file("${path.module}/conf_files/application-log.conf")
+    "dataplane-log.conf"   = file("${path.module}/conf_files/dataplane-log.conf")
+    "host-log.conf"        = file("${path.module}/conf_files/host-log.conf")
+    "parsers.conf"         = file("${path.module}/conf_files/parsers.conf")
+  }
+
+  tags = {
+    Environment = "dev"
+  }
+}
+```
+
+### With AWS ALB Ingress
+
+Exposes Grafana via ALB Ingress Controller using `grafana_values_override`.
+
+```terraform
+module "eks_observability" {
+  source = "./modules/eks-observability"
+
+  cluster_name = "my-cluster"
+
+  # Grafana overrides for ALB Ingress Controller
+  grafana_values_override = {
+    service = { type = "NodePort" }
+    ingress = {
+      enabled          = true
+      ingressClassName = "alb"
+      annotations = {
+        "alb.ingress.kubernetes.io/scheme"      = "internet-facing"
+        "alb.ingress.kubernetes.io/target-type" = "ip"
+      }
+      hosts = ["grafana.example.com"]
+    }
+  }
+
+  # Fluetbit config files
+  fluent_bit_config_files = {
+    "fluent-bit.conf"      = file("${path.module}/conf_files/fluent-bit.conf")
+    "application-log.conf" = file("${path.module}/conf_files/application-log.conf")
+    "dataplane-log.conf"   = file("${path.module}/conf_files/dataplane-log.conf")
+    "host-log.conf"        = file("${path.module}/conf_files/host-log.conf")
+    "parsers.conf"         = file("${path.module}/conf_files/parsers.conf")
+  }
+
+  tags = {
+    Environment = "dev"
   }
 }
 ```
