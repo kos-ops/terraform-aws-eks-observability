@@ -199,8 +199,9 @@ variable "fluent_bit_role_name" {
 }
 
 variable "fluent_bit_config_files" {
-  description = "Map of filename to content for Fluent Bit ConfigMap (e.g. fluent-bit.conf, application-log.conf, ...)"
+  description = "Map of filename to content for Fluent Bit ConfigMap (e.g. fluent-bit.conf, application-log.conf, ...). If null, uses built-in defaults."
   type        = map(string)
+  default     = null
 }
 
 variable "aws_for_fluent_bit_version" {

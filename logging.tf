@@ -1,3 +1,15 @@
+locals {
+  default_fluent_bit_config_files = {
+    "fluent-bit.conf"      = file("${path.module}/conf_files/fluent-bit.conf")
+    "application-log.conf" = file("${path.module}/conf_files/application-log.conf")
+    "dataplane-log.conf"   = file("${path.module}/conf_files/dataplane-log.conf")
+    "host-log.conf"        = file("${path.module}/conf_files/host-log.conf")
+    "parsers.conf"         = file("${path.module}/conf_files/parsers.conf")
+  }
+
+  fluent_bit_config_files = var.fluent_bit_config_files != null ? var.fluent_bit_config_files : local.default_fluent_bit_config_files
+}
+
 ####################################################################################################
 # Configmap fluent-bit-cluster-info
 ####################################################################################################
@@ -158,7 +170,7 @@ resource "kubernetes_config_map" "fluent_bit_config" {
     }
   }
 
-  data = var.fluent_bit_config_files
+  data = local.fluent_bit_config_files
 }
 
 ####################################################################################################
