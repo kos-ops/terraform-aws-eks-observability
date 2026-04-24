@@ -16,7 +16,7 @@ Reusable EKS observability module that installs and configures the full monitori
 
 - **Prometheus** — metrics collection via Helm chart with persistent TSDB storage; optional subcharts: kube-state-metrics, node-exporter, alertmanager, pushgateway
 - **Grafana** — dashboards and visualization with Prometheus datasource; optionally exposed via Gateway API HTTPRoute or any other mechanism (ALB Ingress, Istio, etc.) through `grafana_values_override`
-- **Fluent Bit** — DaemonSet-based log shipping to CloudWatch Logs (application, dataplane, and host logs)
+- **Fluent Bit** — DaemonSet-based log shipping to CloudWatch Logs (application, dataplane, and host logs). Ships with default configs that work out of the box; override via `fluent_bit_config_files` if needed
 - **IAM roles** — IRSA-based roles for Prometheus (EBS snapshots) and Fluent Bit (CloudWatch Logs)
 
 Both Prometheus and Grafana support `*_values_override` inputs to pass arbitrary Helm values (tolerations, nodeSelector, additional config, etc.) without changing the module.
@@ -53,6 +53,27 @@ grafana_values_override = {
 ```
 
 
+### Logging
+
+Fluent Bit runs as a DaemonSet and ships all container, dataplane, and host logs to **Amazon CloudWatch Logs**. Default log group structure:
+
+| Log type | Log group | Log stream |
+|----------|-----------|------------|
+| Application | `/aws/<cluster_name>/namespace/<namespace>` | `<container_name>` |
+| Dataplane (kubelet, containerd, aws-node, kube-proxy) | `/aws/<cluster_name>/dataplane` | `<node>-…` |
+| Host (dmesg, messages, secure) | `/aws/<cluster_name>/host` | `<node>.…` |
+
+The default multiline parser merges stack traces (any language) into single log events — new entry is detected by a `YYYY-MM-DD` or `YYYY/MM/DD` timestamp prefix. Log retention is set to **90 days**.
+
+To query application logs use CloudWatch Logs Insights:
+```
+fields @timestamp, log
+| filter container_name = "my-service"
+| sort @timestamp desc
+| limit 100
+```
+
+
 ## Usage
 
 ### Minimal — no ingress
@@ -65,6 +86,21 @@ module "eks_observability" {
 
   cluster_name = "my-cluster"
 
+  tags = {
+    Environment = "dev"
+  }
+}
+```
+
+### With Fluent Bit config override
+
+```terraform
+module "eks_observability" {
+  source = "./modules/eks-observability"
+
+  cluster_name = "my-cluster"
+
+  # User-provided Fluent Bit configuration files
   fluent_bit_config_files = {
     "fluent-bit.conf"      = file("${path.module}/conf_files/fluent-bit.conf")
     "application-log.conf" = file("${path.module}/conf_files/application-log.conf")
@@ -96,15 +132,6 @@ module "eks_observability" {
   grafana_gateway_namespace    = "ingress-gateway"
   grafana_gateway_section_name = "https"
 
-  # Fluetbit config files
-  fluent_bit_config_files = {
-    "fluent-bit.conf"      = file("${path.module}/conf_files/fluent-bit.conf")
-    "application-log.conf" = file("${path.module}/conf_files/application-log.conf")
-    "dataplane-log.conf"   = file("${path.module}/conf_files/dataplane-log.conf")
-    "host-log.conf"        = file("${path.module}/conf_files/host-log.conf")
-    "parsers.conf"         = file("${path.module}/conf_files/parsers.conf")
-  }
-
   tags = {
     Environment = "dev"
   }
@@ -133,15 +160,6 @@ module "eks_observability" {
       }
       hosts = ["grafana.example.com"]
     }
-  }
-
-  # Fluetbit config files
-  fluent_bit_config_files = {
-    "fluent-bit.conf"      = file("${path.module}/conf_files/fluent-bit.conf")
-    "application-log.conf" = file("${path.module}/conf_files/application-log.conf")
-    "dataplane-log.conf"   = file("${path.module}/conf_files/dataplane-log.conf")
-    "host-log.conf"        = file("${path.module}/conf_files/host-log.conf")
-    "parsers.conf"         = file("${path.module}/conf_files/parsers.conf")
   }
 
   tags = {
@@ -191,7 +209,7 @@ module "eks_observability" {
 | <a name="input_cluster_name"></a> [cluster\_name](#input\_cluster\_name) | Name of the EKS cluster | `string` | n/a |
 | <a name="input_create_grafana_httproute"></a> [create\_grafana\_httproute](#input\_create\_grafana\_httproute) | Whether to create an HTTPRoute resource for Grafana (Gateway API). Disable if using Ingress or other routing. | `bool` | `false` |
 | <a name="input_fluent_bit_ci_version"></a> [fluent\_bit\_ci\_version](#input\_fluent\_bit\_ci\_version) | CI\_VERSION env var value for Fluent Bit | `string` | `"k8s/1.3.41"` |
-| <a name="input_fluent_bit_config_files"></a> [fluent\_bit\_config\_files](#input\_fluent\_bit\_config\_files) | Map of filename to content for Fluent Bit ConfigMap (e.g. fluent-bit.conf, application-log.conf, ...) | `map(string)` | n/a |
+| <a name="input_fluent_bit_config_files"></a> [fluent\_bit\_config\_files](#input\_fluent\_bit\_config\_files) | Map of filename to content for Fluent Bit ConfigMap (e.g. fluent-bit.conf, application-log.conf, ...). If null, uses built-in defaults. | `map(string)` | null |
 | <a name="input_fluent_bit_http_port"></a> [fluent\_bit\_http\_port](#input\_fluent\_bit\_http\_port) | HTTP server port for Fluent Bit metrics | `string` | `"2020"` |
 | <a name="input_fluent_bit_http_server"></a> [fluent\_bit\_http\_server](#input\_fluent\_bit\_http\_server) | Enable HTTP server for Fluent Bit metrics (On/Off) | `string` | `"On"` |
 | <a name="input_fluent_bit_image_pull_policy"></a> [fluent\_bit\_image\_pull\_policy](#input\_fluent\_bit\_image\_pull\_policy) | Image pull policy for Fluent Bit container | `string` | `"Always"` |
